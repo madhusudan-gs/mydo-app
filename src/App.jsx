@@ -7,7 +7,7 @@ import {
   ChevronDown, ChevronRight, Timer, ListTodo, Archive
 } from "lucide-react";
 
-/* --------------------------------- Helpers -------------------------------- */
+/* ----------------------------- Helpers ----------------------------- */
 const PRIORITIES = ["Low", "Med", "High", "Urgent"];
 const RECUR_OPTS = ["none", "daily", "weekly", "monthly"];
 
@@ -41,7 +41,7 @@ const nextRecurringDate = (date, recur) => {
   return nd.toISOString().slice(0, 10);
 };
 
-/* ------------------------------- UI Primitives ----------------------------- */
+/* ----------------------------- UI Primitives ----------------------------- */
 const Button = ({ as: As = "button", className, children, ...props }) => (
   <As
     className={classNames(
@@ -71,7 +71,6 @@ const Textarea = (props) => (
     )}
   />
 );
-// NOTE: made relative to create a stacking context (overlap fix)
 const Section = ({ title, icon: Icon, actions, children }) => (
   <div className="relative bg-white rounded-2xl p-4 shadow-sm border">
     <div className="flex items-center justify-between mb-3">
@@ -84,10 +83,10 @@ const Section = ({ title, icon: Icon, actions, children }) => (
   </div>
 );
 
-/* ------------------------------- Pomodoro Hook ----------------------------- */
+/* ----------------------------- Pomodoro Hook ----------------------------- */
 function usePomodoro(initial = { work: 25 * 60, break: 5 * 60 }) {
   const [dur, setDur] = useState(initial);
-  const [mode, setMode] = useState("work"); // work | break
+  const [mode, setMode] = useState("work");
   const [secs, setSecs] = useState(dur.work);
   const [running, setRunning] = useState(false);
   const [boundTaskId, setBoundTaskId] = useState(null);
@@ -118,7 +117,7 @@ function usePomodoro(initial = { work: 25 * 60, break: 5 * 60 }) {
   };
 }
 
-/* --------------------------------- App ------------------------------------ */
+/* ----------------------------- Main App ----------------------------- */
 export default function MyDo() {
   const [tasks, setTasks] = useState(() => loadLS("mydo.tasks", []));
   const [view, setView] = useState(() =>
@@ -174,129 +173,11 @@ export default function MyDo() {
           .includes(s)
       );
     }
-    switch (view.type) {
-      case "inbox":
-        list = list.filter((t) => !t.completedAt);
-        break;
-      case "today":
-        list = list.filter(
-          (t) =>
-            !t.completedAt &&
-            (isSameDay(t.due, todayISO()) ||
-              (t.due && new Date(t.due) < new Date()))
-        );
-        break;
-      case "upcoming":
-        list = list.filter((t) => !t.completedAt && inNextDays(t.due, 7));
-        break;
-      case "project":
-        list = list.filter((t) => t.project === view.key && !t.completedAt);
-        break;
-      case "label":
-        list = list.filter((t) => (t.labels || []).includes(view.key) && !t.completedAt);
-        break;
-      case "completed":
-        list = list.filter((t) => !!t.completedAt);
-        break;
-      case "archive":
-        list = tasks.filter((t) => !!t.archived);
-        break;
-      default:
-        break;
+    if (view.type === "today") {
+      list = list.filter((t) => !t.completedAt && isSameDay(t.due, todayISO()));
     }
-    const pRank = (p) => PRIORITIES.indexOf(p ?? "Low");
-    list.sort((a, b) => {
-      const ad = a.due ? new Date(a.due).getTime() : Infinity;
-      const bd = b.due ? new Date(b.due).getTime() : Infinity;
-      if (ad !== bd) return ad - bd;
-      if (pRank(b.priority) !== pRank(a.priority)) return pRank(b.priority) - pRank(a.priority);
-      return new Date(a.createdAt) - new Date(b.createdAt);
-    });
     return list;
   }, [tasks, view, q]);
-
-  const counts = useMemo(
-    () => ({
-      inbox: tasks.filter((t) => !t.completedAt && !t.archived).length,
-      today: tasks.filter(
-        (t) =>
-          !t.completedAt &&
-          (isSameDay(t.due, todayISO()) ||
-            (t.due && new Date(t.due) < new Date()))
-      ).length,
-      upcoming: tasks.filter((t) => !t.completedAt && inNextDays(t.due, 7)).length,
-      completed: tasks.filter((t) => !!t.completedAt).length,
-      archive: tasks.filter((t) => !!t.archived).length,
-    }),
-    [tasks]
-  );
-
-  // Mutations
-  const addTask = (t) =>
-    setTasks((prev) => [
-      { ...t, id: uuidv4(), createdAt: new Date().toISOString() },
-      ...prev,
-    ]);
-  const toggleDone = (id) =>
-    setTasks((prev) =>
-      prev.flatMap((t) => {
-        if (t.id !== id) return [t];
-        const completed = !t.completedAt;
-        const base = { ...t, completedAt: completed ? new Date().toISOString() : null };
-        // Handle recurring
-        if (completed && t.recur && t.recur !== "none") {
-          const nd = nextRecurringDate(t.due || todayISO(), t.recur);
-          const next = {
-            ...t,
-            id: uuidv4(),
-            createdAt: new Date().toISOString(),
-            completedAt: null,
-            due: nd,
-          };
-          return [base, next];
-        }
-        return [base];
-      })
-    );
-  const removeTask = (id) => setTasks((prev) => prev.filter((t) => t.id !== id));
-  const archiveTask = (id) => setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, archived: true } : t)));
-  const updateTask = (id, patch) => setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
-  const bulkCompleteToday = () =>
-    setTasks((prev) =>
-      prev.map((t) =>
-        !t.completedAt &&
-        (isSameDay(t.due, todayISO()) || (t.due && new Date(t.due) < new Date()))
-          ? { ...t, completedAt: new Date().toISOString() }
-          : t
-      )
-    );
-
-  // Export / Import
-  const exportJSON = () => {
-    const blob = new Blob([JSON.stringify({ v: 1, tasks }, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `mydo-${todayISO()}.json`; a.click();
-    URL.revokeObjectURL(url);
-  };
-  const importJSON = (file) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const data = JSON.parse(reader.result);
-        if (Array.isArray(data.tasks)) setTasks(data.tasks);
-        else if (Array.isArray(data)) setTasks(data);
-        else alert("Invalid file format");
-      } catch { alert("Invalid file"); }
-    };
-    reader.readAsText(file);
-  };
-
-  // Grouping
-  const groupedByDue = useMemo(
-    () => groupBy(filtered, (t) => (t.due ? new Date(t.due).toDateString() : "No due date")),
-    [filtered]
-  );
 
   return (
     <div className="min-h-screen w-full bg-neutral-50 text-neutral-800 p-4 lg:p-6">
@@ -317,178 +198,39 @@ export default function MyDo() {
               />
               <Button onClick={() => setQ("")} title="Clear"><X size={16}/></Button>
             </div>
-            <nav className="flex flex-col gap-1">
-              <NavItem icon={Inbox} label="Inbox" count={counts.inbox} active={view.type==="inbox"} onClick={() => setView({ type: "inbox" })}/>
-              <NavItem icon={Calendar} label="Today" count={counts.today} active={view.type==="today"} onClick={() => setView({ type: "today" })}/>
-              <NavItem icon={Clock} label="Upcoming" count={counts.upcoming} active={view.type==="upcoming"} onClick={() => setView({ type: "upcoming" })}/>
-              <NavItem icon={CheckCircle2} label="Completed" count={counts.completed} active={view.type==="completed"} onClick={() => setView({ type: "completed" })}/>
-              <NavItem icon={Archive} label="Archive" count={counts.archive} active={view.type==="archive"} onClick={() => setView({ type: "archive" })}/>
-            </nav>
-
-            {/* Projects */}
-            <div className="mt-4">
-              <button onClick={() => setProjectsOpen((s) => !s)} className="flex items-center gap-2 text-sm font-semibold">
-                {projectsOpen ? <ChevronDown size={16}/> : <ChevronRight size={16}/> }
-                Projects
-              </button>
-              <AnimatePresence>
-                {projectsOpen && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: "auto", opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    className="pl-5 mt-2 flex flex-col gap-1"
-                  >
-                    {allProjects.length === 0 && <div className="text-sm text-neutral-500">No projects yet</div>}
-                    {allProjects.map((p) => (
-                      <NavLeaf key={p} active={view.type==="project" && view.key===p} onClick={() => setView({ type: "project", key: p })} label={p}/>
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-
-            {/* Labels */}
-            <div className="mt-2">
-              <button onClick={() => setLabelsOpen((s) => !s)} className="flex items-center gap-2 text-sm font-semibold">
-                {labelsOpen ? <ChevronDown size={16}/> : <ChevronRight size={16}/> }
-                Labels
-              </button>
-              <AnimatePresence>
-                {labelsOpen && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: "auto", opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    className="pl-5 mt-2 flex flex-col gap-1"
-                  >
-                    {allLabels.length === 0 && <div className="text-sm text-neutral-500">No labels yet</div>}
-                    {allLabels.map((l) => (
-                      <NavLeaf key={l} active={view.type==="label" && view.key===l} onClick={() => setView({ type: "label", key: l })} label={`#${l}`}/>
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-
-            {/* Utilities */}
-            <div className="mt-4 flex gap-2">
-              <Button onClick={exportJSON}><Download size={16}/>Export</Button>
-              <label className="cursor-pointer">
-                <input
-                  type="file"
-                  accept=".json"
-                  className="hidden"
-                  onChange={(e) => e.target.files?.[0] && importJSON(e.target.files[0])}
-                />
-                <span className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 border hover:shadow-md">
-                  <Upload size={16}/>Import
-                </span>
-              </label>
-            </div>
-            <div className="mt-2">
-              <Button className="w-full" onClick={() => setSettingsOpen(true)}><Settings size={16}/>Settings</Button>
-            </div>
           </Section>
         </aside>
 
         {/* Main */}
         <main className="col-span-12 md:col-span-9 flex flex-col gap-4">
           <Header pomo={pomo}/>
-          {/* Wrap Quick Add in a higher z-index container (overlap fix) */}
           <div className="relative z-10">
             <Section
-              title={viewTitle(view)}
+              title="Tasks"
               icon={Filter}
-              actions={
-                <>
-                  {view.type === "today" && (
-                    <Button onClick={bulkCompleteToday} title="Complete all due today">
-                      <CheckCircle2 size={16}/>Complete Today
-                    </Button>
-                  )}
-                  <Button onClick={() => setShowAdd(true)}><Plus size={16}/>Quick Add (A)</Button>
-                </>
-              }
+              actions={<Button onClick={() => setShowAdd(true)}><Plus size={16}/>Quick Add (A)</Button>}
             >
-              <div className="flex flex-col gap-5">
-                {Object.entries(groupedByDue)
-                  .sort(([ak], [bk]) =>
-                    (ak === "No due date") - (bk === "No due date") ||
-                    new Date(ak) - new Date(bk)
-                  )
-                  .map(([k, items]) => (
-                    <div key={k}>
-                      <div className="text-sm font-semibold mb-2 text-neutral-600 flex items-center gap-2">
-                        <Calendar size={14}/> {k}
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        {items.map((t) => (
-                          <TaskRow
-                            key={t.id}
-                            t={t}
-                            onToggle={() => toggleDone(t.id)}
-                            onRemove={() => removeTask(t.id)}
-                            onArchive={() => archiveTask(t.id)}
-                            onEdit={(patch) => updateTask(t.id, patch)}
-                            onBindPomodoro={() => pomo.bind(t.id)}
-                            bound={pomo.boundTaskId === t.id}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                {filtered.length === 0 && (
-                  <EmptyState onAdd={() => setShowAdd(true)} />
-                )}
-              </div>
+              {filtered.map((t) => (
+                <div key={t.id} className="p-2 border rounded">{t.title}</div>
+              ))}
             </Section>
           </div>
         </main>
       </div>
-
-      {/* Modals */}
-      <AnimatePresence>
-        {showAdd && (
-          <Modal onClose={() => setShowAdd(false)}>
-            <AddTaskForm
-              onSubmit={(t) => { addTask(t); setShowAdd(false); }}
-              defaultDue={view.type === "today" ? todayISO() : ""}
-            />
-          </Modal>
-        )}
-        {settingsOpen && (
-          <Modal onClose={() => setSettingsOpen(false)}>
-            <SettingsPane
-              pomo={pomo}
-              clearAll={() => {
-                if (confirm("This will delete all tasks")) setTasks([]);
-              }}
-            />
-          </Modal>
-        )}
-      </AnimatePresence>
     </div>
   );
 }
 
-/* ------------------------------- Components -------------------------------- */
+/* ----------------------------- Components ----------------------------- */
 function Header({ pomo }) {
-  const [now, setNow] = useState(new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(id);
-  }, []);
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center">
-      <Section title="Focus Timer" icon={Timer}>
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-3">
-            <span className={classNames("text-3xl font-mono", pomo.mode === "work" ? "text-neutral-900" : "text-green-600")}>
-              {pomo.fmt(pomo.secs)}
-            </span>
-            <span className="text-xs px-2 py-1 rounded-full border">{pomo.mode.toUpperCase()}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button onClick={() => pomo.setRunning((r) => !r)}>
-              {
+    <Section title="Focus Timer" icon={Timer}>
+      <div className="flex items-center justify-between">
+        <span className="text-2xl font-mono">{pomo.fmt(pomo.secs)}</span>
+        <Button onClick={() => pomo.setRunning((r) => !r)}>
+          {pomo.running ? <Pause size={16}/> : <Play size={16}/>}
+        </Button>
+      </div>
+    </Section>
+  );
+}
